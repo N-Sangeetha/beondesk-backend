@@ -11,7 +11,7 @@ const cache = new NodeCache();
 router.get("/images", [auth, rate_limiter], async (req, res) => {
   try {
     let page = req.query.page || 1;
-    let per_page = req.query.per_page || 4;
+    let per_page = req.query.per_page || 9;
     let query = req.query.query || "hills";
 
     let images = null;

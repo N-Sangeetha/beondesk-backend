@@ -1,65 +1,71 @@
-const express = require('express');
-const auth = require('../middleware/auth');
-const rate_limiter = require('../middleware/rate_limit');
-const axios = require('axios')
+const express = require("express");
+const auth = require("../middleware/auth");
+const rate_limiter = require("../middleware/rate_limit");
+const axios = require("axios");
+const NodeCache = require("node-cache");
+
 const router = new express.Router();
-
-function memoize(method) {
-  const cache = [];
-  
-  return async function() {
-      let index = cache.findIndex(x => (x.page === arguments['0'] && x.per_page === arguments['1'] && x.query === arguments['2']))
-
-      console.log('cache', cache)
-      if(index !== -1) {
-        console.log('from cache')
-        return cache[index].images
-      }
-
-      const images = await method.apply(this, arguments);
-      const data = {
-        page: arguments['0'],
-        per_page: arguments['1'],
-        query: arguments['2'],
-        images: images
-      }
-      cache.push(data)
-      console.log('from api')
-      return images;
-  };
-}
+const cache = new NodeCache();
 
 //images list
-router.get('/images', [auth, rate_limiter], async (req, res) => {
-	try {
-		let page = req.query.page || 1;
-		let per_page = req.query.per_page || 4;
-    let searchQuery = req.query.query || 'hills';
+router.get("/images", [auth, rate_limiter], async (req, res) => {
+  try {
+    let page = req.query.page || 1;
+    let per_page = req.query.per_page || 4;
+    let query = req.query.query || "hills";
 
-    const memoizedData =  memoize(async function() {
-      const response = await axios.get(`https://api.unsplash.com/search/photos?client_id=${process.env.UNSPLASH_ACCESS_KEY}&page=${page}&per_page=${per_page}${searchQuery ? `&query=${searchQuery}` : ''}`);
+    let images = null;
 
-      return response.data
-  });
+    if (cache.has("cacheImage")) {
+      console.log("from cache");
 
-  const images = await memoizedData(page, per_page, searchQuery)
+      const cacheImages = cache.get("cacheImage");
+      let index = cacheImages?.findIndex(
+        (x) => x.page === page && x.per_page === per_page && x.query === query
+      );
+      if (index !== -1) {
+        return res.status(200).send({ code: 200, images: cacheImages[index].images });
+      }
+    }
 
-    res.status(200).send({ code: 200, images: images });
-	} catch (e) {
-    console.log('Error in get images', e)
-		res.status(500).send({ code: 500, message: e.name });
-	}
+    console.log("from api");
+    const response = await axios.get(
+      `https://api.unsplash.com/search/photos?client_id=${
+        process.env.UNSPLASH_ACCESS_KEY
+      }&page=${page}&per_page=${per_page}${query ? `&query=${query}` : ""}`
+    );
+    images = response.data;
+
+    let cacheImages = cache.get("cacheImage");
+    cacheImages = cacheImages ? cacheImages : []
+    cacheImages.push({ page, per_page, query, images })
+
+    cache.set("cacheImage", cacheImages);
+
+    return res.status(200).send({ code: 200, images: images });
+  } catch (e) {
+    console.log("Error from images api", e);
+    res.status(500).send({ code: 500, message: e.name });
+  }
 });
-
 
 //image download
-router.get('/download', auth, async (req, res) => {
-	try {
+router.get("/download", auth, async (req, res) => {
+  try {
+    const response = await axios.get(
+      `https://api.unsplash.com/photos/${req.query.id}/download?client_id=${process.env.UNSPLASH_ACCESS_KEY}`
+    )
 
-	} catch (e) {
-		res.status(500).send({ code: 500, message: e.name });
-	}
+    if(response.data){
+      res.status(200).send(response.data?.url);
+    }else{
+      res.status(404).send('Not Found')
+    }
+
+  } catch (e) {
+    console.log('Error in download api', e)
+    res.status(500).send({ code: 500, message: e.name });
+  }
 });
-
 
 module.exports = router;

@@ -2,10 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const rate_limiter = require('../middleware/rate_limit');
 const axios = require('axios')
-const NodeCache = require("node-cache");
-
 const router = new express.Router();
-const cache = new NodeCache();
 
 function memoize(method) {
   const cache = [];
